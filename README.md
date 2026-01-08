@@ -84,4 +84,31 @@ python test_ping.py
 
 ## 业务说明
 本同步脚本涉及2个库2张表的融合同步，因此比较复杂。这只是一个demo，需要结合自己的业务去修改。
-包在requirements.txt中，请自行安装。
+
+## 补充说明
+
+### 为什么选择Flink+StarRocks而不是云方案
+本来一期是想直接上云，用RDS + DataWorks + MaxCompute + Hologres，但是这个费用比较高，就替换成为了Flink+StarRocks。中间是各个数据业务收集到OSS，再用Flink清洗拆分到StarRocks里面。
+
+- RDS用于同步数据
+- MaxCompute用于处理数据存储
+- Hologres用于分析数据
+
+这是典型的ETL（抽取、转换、加载）数据处理技术。
+
+### Flink简介
+Apache Flink是一个开源的流处理框架，具有高吞吐量、低延迟的特点，支持批处理和流处理统一计算模型。它能够处理无界和有界数据流，提供精确一次的状态一致性保证，适用于实时数据分析、事件驱动应用等场景。
+
+### Flink到StarRocks的两种同步方式
+
+#### 1. 数据表直接同步
+通过业务yaml文件配置表之间的同步关系。但如果从MySQL同步到StarRocks，会遇到兼容性问题，因为两者在表结构和索引上有很大差异：
+- MySQL的索引基于B-tree结构
+- StarRocks采用列式存储，基于列的索引结构逻辑
+
+StarRocks支持两种主要索引类型：
+- **聚合索引**（Aggregate Index）：主要用于加速聚合查询（如SUM、COUNT、AVG），预先计算聚合值并存储在索引中，减少查询时需要扫描的数据量。
+- **位图索引**（Bitmap Index）：主要用于加速包含/排除查询（如IN、NOT IN），通过位图形式存储数据，使得查询操作非常高效。
+
+#### 2. 数据到OSS，再通过Flink CDC处理
+数据先收集到OSS，然后通过Flink的CDC（Change Data Capture）功能进行处理，最后写入StarRocks。这种方式需要编写配置文件和脚本运行逻辑，更加灵活但配置相对复杂。
