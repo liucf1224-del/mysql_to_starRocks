@@ -1,0 +1,2 @@
+# mysql_to_starRocks
+mysql到starRocks的推送业务，监听mysql的binlog日志，然后python去做中转方案，实时推送写入starRocks中
