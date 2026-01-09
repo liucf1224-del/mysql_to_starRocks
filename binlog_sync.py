@@ -150,7 +150,7 @@ def sync_to_starrocks(club_data):
     # 调试日志（融合你的优点）
     logger.info(f"同步准备 - 字段数: {len(fields)}, 参数数: {len(values)}, 目标ID: {final_data['id']}")
     for i, (field, val) in enumerate(zip(fields[:5], values[:5])):  # 打印前5个参数便于调试
-        logger.debug(f"参数{i+1} | {field}: {val} (类型: {type(val)})")
+        logger.debug(f"参数{i + 1} | {field}: {val} (类型: {type(val)})")
 
     # 4. 执行同步（主逻辑：高性能INSERT ON DUPLICATE，兜底：先查后插/更）
     conn = None
@@ -228,7 +228,7 @@ def parse_binlog_old():
         "log_pos": binlog_pos,
         "resume_stream": True,  # 断点续传
         "server_id": random.randint(100000, 999999),  # 唯一server_id，避免冲突
-        "only_events": [WriteRowsEvent, UpdateRowsEvent,DeleteRowsEvent]  # 只监听插入/更新事件
+        "only_events": [WriteRowsEvent, UpdateRowsEvent, DeleteRowsEvent]  # 只监听插入/更新事件
     }
 
     # 启动binlog监听
@@ -296,7 +296,8 @@ def parse_binlog():
         "host": os.getenv('MYSQL_HOST'),
         "port": int(os.getenv('MYSQL_PORT')),
         "user": os.getenv('MYSQL_USER'),
-        "passwd": os.getenv('MYSQL_PASSWORD'),  # pymysql 使用 passwd 或 password，但在 mysql-replication 中通常建议用 connection_settings 传参
+        "passwd": os.getenv('MYSQL_PASSWORD'),
+        # pymysql 使用 passwd 或 password，但在 mysql-replication 中通常建议用 connection_settings 传参
         "charset": "utf8mb4",
     }
 
@@ -305,7 +306,7 @@ def parse_binlog():
     # 这里我们根据日志中 'UNKNOWN_COL0' 到 'UNKNOWN_COL52' 的顺序，结合 StarRocks DDL 推断列名
     # 请确保这个顺序与 MySQL `desc fa_clubs` 的顺序完全一致！
     ctl_columns = [
-        'id', 'provider_id', 'code', 'name', 'is_test_club', 
+        'id', 'provider_id', 'code', 'name', 'is_test_club',
         'name_of_registration', 'type', 'organization_credit_code', 'legal_representative', 'principal_name',
         'principal_phone', 'reservation_phone', 'number_of_chain_clubs', 'number_of_employees', 'area_of_club',
         'province', 'city', 'county', 'address', 'introduce',
@@ -368,14 +369,15 @@ def parse_binlog():
                                     # 假如某个索引不存在，可能出问题了，或者列数不对
                                     logger.warning(f"无法找到列 {key}，原始数据: {raw_values}")
                                     break
-                            
+
                             # 重新组装成带列名的字典
                             if len(sorted_values) == len(ctl_columns):
                                 club_data = dict(zip(ctl_columns, sorted_values))
                                 logger.info(f"手动映射列名成功: {club_data}")
                             else:
-                                logger.error(f"列数不匹配！定义了 {len(ctl_columns)} 列，但 binlog 数据有 {len(sorted_values)} 列。请检查 ctl_columns 定义。")
-                                club_data = raw_values # 回退到原始数据，虽然会报错
+                                logger.error(
+                                    f"列数不匹配！定义了 {len(ctl_columns)} 列，但 binlog 数据有 {len(sorted_values)} 列。请检查 ctl_columns 定义。")
+                                club_data = raw_values  # 回退到原始数据，虽然会报错
                         else:
                             club_data = raw_values
 
@@ -389,7 +391,7 @@ def parse_binlog():
                 for row in binlog_event.rows:
                     before_data = row['before_values']
                     after_data = row['after_values']
-                    
+
                     # 同样处理列映射
                     if any(k.startswith('UNKNOWN_COL') for k in after_data.keys()):
                         sorted_values = []
@@ -397,11 +399,11 @@ def parse_binlog():
                             key = f'UNKNOWN_COL{i}'
                             if key in after_data:
                                 sorted_values.append(after_data[key])
-                        
+
                         if len(sorted_values) == len(ctl_columns):
                             after_data = dict(zip(ctl_columns, sorted_values))
                             logger.info(f"手动映射更新后数据成功")
-                    
+
                     logger.info(f"更新前: {before_data}")
                     logger.info(f"更新后: {after_data}")
                     sync_to_starrocks(after_data)
@@ -425,30 +427,65 @@ def parse_binlog():
         logger.info("关闭binlog连接")
 
 
-
 def delete_from_starrocks(club_data):
     """从StarRocks删除数据"""
-    if not club_data or 'id' not in club_data:
-        logger.warning("删除数据中缺少id字段，跳过")
+    if not club_data:
+        logger.warning("删除数据为空，跳过")
+        return
+
+    # 定义列名映射（与 parse_binlog 中的 ctl_columns 保持一致）
+    ctl_columns = [
+        'id', 'provider_id', 'code', 'name', 'is_test_club',
+        'name_of_registration', 'type', 'organization_credit_code', 'legal_representative', 'principal_name',
+        'principal_phone', 'reservation_phone', 'number_of_chain_clubs', 'number_of_employees', 'area_of_club',
+        'province', 'city', 'county', 'address', 'introduce',
+        'trial_count', 'max_client_count', 'online_client_count', 'export_area', 'disabled',
+        'admin_id', 'status', 'check_status', 'comment', 'check_comment',
+        'create_time', 'update_time', 'forbid_load', 'facilitator_id', 'signup_status',
+        'signup_time', 'sync_status', 'sync_switch_status', 'sync_time', 'sync_switch_time',
+        'expiration_time', 'is_culturaltravel', 'business_status', 'cavca_status', 'cavca_stop_time',
+        'cavca_cancel_stop_time', 'cavca_room_number', 'cavca_sign_status', 'code_time', 'url',
+        'code_url', 'is_branch', 'latest_order_time'
+    ]
+
+    # 处理 UNKNOWN_COL 格式的数据，映射列名
+    if any(k.startswith('UNKNOWN_COL') for k in club_data.keys()):
+        sorted_values = []
+        for i in range(len(club_data)):
+            key = f'UNKNOWN_COL{i}'
+            if key in club_data:
+                sorted_values.append(club_data[key])
+
+        if len(sorted_values) == len(ctl_columns):
+            club_data = dict(zip(ctl_columns, sorted_values))
+            logger.info(f"删除数据列名映射成功: code={club_data.get('code')}")
+        else:
+            logger.error(f"删除数据列数不匹配！定义了 {len(ctl_columns)} 列，但数据有 {len(sorted_values)} 列")
+            return
+
+    # 使用 code 字段删除
+    if 'code' not in club_data or not club_data['code']:
+        logger.warning("删除数据中缺少code字段或code为空，跳过")
         return
 
     table_name = 'clubs_mix'
-    club_id = club_data['id']
+    club_code = club_data['code']
 
     try:
         conn = get_starrocks_conn()
         cursor = conn.cursor()
 
-        delete_sql = f"DELETE FROM {table_name} WHERE id = %s"
-        cursor.execute(delete_sql, (club_id,))
+        delete_sql = f"DELETE FROM {table_name} WHERE code = %s"
+        cursor.execute(delete_sql, (club_code,))
         conn.commit()
-        logger.info(f"从StarRocks删除成功：id={club_id}")
+        logger.info(f"从StarRocks删除成功：code={club_code}")
     except Exception as e:
         conn.rollback()
         logger.error(f"从StarRocks删除失败：{e}，数据：{club_data}")
     finally:
         cursor.close()
         conn.close()
+
 
 # ===================== 6. 主函数 =====================
 if __name__ == "__main__":
